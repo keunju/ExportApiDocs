@@ -5,13 +5,14 @@
 
 class ApiInfo:
 
-    def __init__(self, summary, description, method, uri, security, request, responses):
+    def __init__(self, summary, description, method, uri, security, request, parameters, responses):
         self.__summary = summary
         self.__description = description
         self.__method = method
         self.__uri = uri
         self.__security = security
         self.__request = request
+        self.__parameters = parameters
         self.__responses = responses
 
     # getter
@@ -65,6 +66,14 @@ class ApiInfo:
         self.__request = request
 
     @property
+    def parameters(self):
+        return self.__parameters
+
+    @parameters.setter
+    def parameters(self, parameters):
+        self.__parameters = parameters
+
+    @property
     def responses(self):
         return self.__responses
 
@@ -74,6 +83,4 @@ class ApiInfo:
 
 
 if __name__ == "__main__":
-    test = ApiInfo("인증토큰 발급", "테스트입니다.", "get", "/////")
-    test.security = "security....."
-    print(test.summary, test.description, test.method, test.uri, test.security)
+    pass

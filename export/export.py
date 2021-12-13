@@ -9,34 +9,31 @@ import model.request as request
 import model.response as response
 import model.schema as schema
 
-if __name__ == '__main__':
-    print("export start")
-
 file_path = "../json/openapi.json"
 
 summary = []  # summary data
 sheets_info = dict()  # {[],[]...}
 
 
-# value.items()
 def set_api_info(items: dict):
-    # value parsing
-    for method, detail in items:
-        # sheet name
-        # sheet_name = detail["tags"][-1]
 
-        print("sheet name : ", detail["tags"][-1])
+    for method, detail in items:
+        # print("sheet name : ", detail["tags"][-1])
 
         # summary
         info_summary = detail["summary"]
 
-        # description
         info_desc = None
+        security = None
+        request_info = None
+        param_info = None
+        responses = None
+
+        # description
         if detail.get('description') is not None:
             info_desc = detail["description"]
 
         # security (securitySchemas/OAuth2PasswordBearerWithCookie에 상세 정의 있음)
-        security = None
         if detail.get("security") is not None:
             security_dict = detail["security"][0]
             if len(security_dict) > 0:
@@ -44,54 +41,20 @@ def set_api_info(items: dict):
                 security = list(security_dict.keys())[0]
 
         # request body
-        request_info = None
         if "requestBody" in detail.keys():
-            req_info = detail["requestBody"]
-            content_type = list(req_info["content"].keys())[0]
-            schema_ref = req_info["content"][content_type]["schema"]["$ref"]
-
-            schema_value = get_ref_value(schema_ref)
-            # print(f'[{method}]', key)
-
-            schema_list = []  # schema class list
-            required_list = []
-            if "required" in schema_value.keys():
-                required_list = schema_value["required"]
-
-            for p_name, p_value in schema_value["properties"].items():
-
-                prop_list = get_properties(p_name, p_value, list())
-
-                print(prop_list)
-
-                # schema class
-                for prop_info in prop_list:
-                    schema_info = schema.Schema(p_name, None, None, None, None, None)
-
-                    # name, title, type, description , default
-                    schema_info.name = prop_info['name'] if "name" in prop_info.keys() else p_name
-                    schema_info.title = prop_info["title"] if "title" in prop_info.keys() else None
-                    schema_info.type = prop_info["type"] if "type" in prop_info.keys() else None
-                    schema_info.default = prop_info["default"] if "default" in prop_info.keys() else None
-                    schema_info.description = prop_info["description"] if "description" in prop_info.keys() else None
-
-                    # add required
-                    if p_name in required_list:
-                        schema_info.required = "required"
-
-                    # schema_list : 최종 request 테이블
-                    schema_list.append(schema_info)
-
-            request_info = request.RequestInfo(content_type, req_info["required"], schema_list)
+            request_info = get_requestInfo(detail["requestBody"])
 
         # parameters ( 'in': 'query' / 'in': 'path')
-        # if "parameters" in detail.keys():
-        #     print("parameters ==> ", detail["parameters"])
+        if "parameters" in detail.keys():
+            param_info = get_parameters(detail["parameters"])
 
         # responses (list)
+        if "responses" in detail.keys():
+            # print(detail["responses"])
+            responses = get_responses(detail["responses"])
 
         # set api info
-        sheet_info = api_info.ApiInfo(info_summary, info_desc, method, key, security, request_info, None)
+        sheet_info = api_info.ApiInfo(info_summary, info_desc, method, key, security, request_info, param_info, responses)
 
         # add sheet list
         if sheet_name in sheets_info:
@@ -145,11 +108,97 @@ def get_properties(p_name: str, in_value: dict, p_list: list):
             get_properties(f'{p_name}.{prop_key}', prop_value, p_list)
 
     else:
-        # {'title': 'Timestamp end', 'type': 'integer', 'description': 'end time unix timestamp', 'default': 1638344901}
         in_value["name"] = in_value["name"] if "name" in in_value.keys() else p_name
         p_list.append(in_value)
 
     return p_list
+
+
+def get_requestInfo(requestBody):
+    content_type = list(requestBody["content"].keys())[0]
+    schema_ref = requestBody["content"][content_type]["schema"]["$ref"]
+
+    schema_value = get_ref_value(schema_ref)
+    # print(f'[{method}]', key)
+
+    schema_list = []  # schema class list
+    required_list = []
+    if "required" in schema_value.keys():
+        required_list = schema_value["required"]
+
+    for p_name, p_value in schema_value["properties"].items():
+
+        prop_list = get_properties(p_name, p_value, list())
+
+        # schema class
+        for prop_info in prop_list:
+            schema_info = schema.ReqSchema(p_name, None, None, None, None, None)
+
+            # name, title, type, description , default
+            schema_info.name = prop_info['name'] if "name" in prop_info.keys() else p_name
+            schema_info.title = prop_info["title"] if "title" in prop_info.keys() else None
+            schema_info.type = prop_info["type"] if "type" in prop_info.keys() else None
+            schema_info.default = prop_info["default"] if "default" in prop_info.keys() else None
+            schema_info.description = prop_info["description"] if "description" in prop_info.keys() else None
+
+            # add required
+            if p_name in required_list:
+                schema_info.required = "required"
+
+            # schema_list : 최종 request 테이블
+            schema_list.append(schema_info)
+
+    return request.RequestInfo(content_type, requestBody["required"], schema_list)
+
+
+def get_parameters(parameters):
+    param_list = []
+    for parameter in parameters:
+        schema_info = schema.ParamSchema(parameter["name"], None, parameter["in"], parameter["required"], None,
+                                         None, None)
+
+        param_schema = parameter["schema"]
+        schema_info.title = param_schema["title"] if "title" in param_schema.keys() else None
+        schema_info.type = param_schema["type"] if "type" in param_schema.keys() else None
+        schema_info.default = param_schema["default"] if "default" in param_schema.keys() else None
+        schema_info.description = param_schema["description"] if "description" in param_schema.keys() else None
+
+        param_list.append(schema_info)
+
+    return param_list
+
+
+def get_responses(responses):
+    res_list = []   # response class list
+
+    for code, res_info in responses.items():
+        content_type = list(res_info["content"].keys())[0]
+        schema_value = None
+        schema_list = []  # schema class list
+
+        if '$ref' in res_info["content"][content_type]["schema"]:
+            schema_ref = res_info["content"][content_type]["schema"]["$ref"]
+            schema_value = get_ref_value(schema_ref)
+            for p_name, p_value in schema_value["properties"].items():
+
+                prop_list = get_properties(p_name, p_value, list())
+
+                # schema class
+                for prop_info in prop_list:
+                    schema_info = schema.ReqSchema(p_name, None, None, None, None, None)
+
+                    # name, title, type, description , default
+                    schema_info.name = prop_info['name'] if "name" in prop_info.keys() else p_name
+                    schema_info.title = prop_info["title"] if "title" in prop_info.keys() else None
+                    schema_info.type = prop_info["type"] if "type" in prop_info.keys() else None
+                    schema_info.default = prop_info["default"] if "default" in prop_info.keys() else None
+                    schema_info.description = prop_info["description"] if "description" in prop_info.keys() else None
+
+                    schema_list.append(schema_info)
+
+            res_list.append(response.ResponseInfo(code, content_type, res_info["description"], schema_list))
+
+    return res_list
 
 
 with open(file_path, 'r', encoding="utf-8") as f:
@@ -182,33 +231,23 @@ with open(file_path, 'r', encoding="utf-8") as f:
                     depth[idx - 2] = uri_value
                 except:
                     depth[idx - 2] = ''
-            # print(f"depth list : {depth}")
-        # print("methods : ", ', '.join(list(value.keys())))
 
         sheet_name = depth[0]
         summary.append(f'{sheet_name} | {depth[1]} | {depth[2]} | {key} | {methods}')
-
-        # sheet_keys = ['dashboard', 'system', 'network', 'firewall', 'object', 'log', 'ips', 'vpn', 'antivirus', 'antispam']
-        # set sheet keys
-        # if sheet_name not in sheet_keys:
-        #     sheet_keys.append(sheet_name)
-        # print("sheet_keys : ", sheet_keys)
 
         # set sheets dict
         if sheet_name not in sheets_info:
             sheets_info[sheet_name] = []
 
-        # key= /api/dashboard/summaries
-
         # api 정보를 sheets에 채우기
         set_api_info(value.items())
 
-        # _info = sheets_info[sheet_name][0]  # AipInfo class
-
-        # print(f'key= {key}', f'value= {value}')
-        # print(f'key= {key}')
-        # pp(value)
+        # print(f'key= {key}, value= {value}')
 
 # Call create excel file function
 save_path = "../data/api_summary.xlsx"
 excel.create_excel_file(summary, sheets_info, save_path)
+
+
+if __name__ == '__main__':
+    print("export start")

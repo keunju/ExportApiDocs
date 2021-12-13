@@ -2,7 +2,7 @@
     Write Excel File
 """
 import openpyxl as xl
-from string import ascii_uppercase
+import traceback
 
 import openpyxl.styles.fills as fills
 from openpyxl.styles.fonts import Font
@@ -25,6 +25,7 @@ def create_excel_file(data: list, sheets_info: dict, save_path: str):
     # API 목록
     insert_summary(sheet, data)
 
+    # extra sheets
     insert_sheets_info(wb, sheets_info)
 
     # set file path
@@ -40,7 +41,6 @@ def create_excel_file(data: list, sheets_info: dict, save_path: str):
 # API 목록 추가
 def insert_summary(sheet, data: list):
     # set header
-    header_row_num = 1
     headers = ['순번', '대메뉴', '중메뉴', '소메뉴', 'API URI', 'methods']
     for idx, name in enumerate(headers):
         header_cell = sheet.cell(1, idx + 1, name)
@@ -61,7 +61,6 @@ def insert_summary(sheet, data: list):
 
 # 시트별 API 상세 내용 추가
 def insert_sheets_info(wb: xl.Workbook, sheets_info: dict):
-
     for sheet_name in sheets_info.keys():
 
         _row = 0
@@ -87,7 +86,6 @@ def insert_sheets_info(wb: xl.Workbook, sheets_info: dict):
             _sheet.cell(_row + 6, 2, info.security).border = border
 
             # add request info
-            req_info = info.request
             if info.request is not None:
                 body_cell = _sheet.cell(_sheet.max_row + 2, 1, "Request Body")
                 body_cell.font = Font(bold=True)
@@ -98,8 +96,8 @@ def insert_sheets_info(wb: xl.Workbook, sheets_info: dict):
                     header_cell = _sheet.cell(current_row + h_idx + 1, 1, info_name)
                     set_header_style(header_cell, "left", False)
 
-                _sheet.cell(body_cell.row + 1, 2, req_info.content_type).border = border
-                _sheet.cell(body_cell.row + 2, 2, req_info.required).border = border
+                _sheet.cell(body_cell.row + 1, 2, info.request.content_type).border = border
+                _sheet.cell(body_cell.row + 2, 2, info.request.required).border = border
 
                 # schema headers
                 schema_headers = ["Name", "Title", "Required", "Type", "Default", "Description"]
@@ -108,24 +106,92 @@ def insert_sheets_info(wb: xl.Workbook, sheets_info: dict):
                     set_header_style(header_cell, "center", False)
 
                 # schema detail
-                for s_idx, schema_info in enumerate(req_info.schema):
-                    detail_idx = body_cell.row + 5 + s_idx
-                    _sheet.cell(detail_idx, 1, schema_info.name).border = border
-                    _sheet.cell(detail_idx, 2, schema_info.title).border = border
-                    _sheet.cell(detail_idx, 3, schema_info.required).border = border
-                    _sheet.cell(detail_idx, 4, schema_info.type).border = border
+                insert_schema_value(_sheet, header_cell, info.request.schema)
 
-                    try:
-                        _sheet.cell(detail_idx, 5, schema_info.default).border = border
-                    except ValueError as e:
-                        # print(e)
-                        _sheet.cell(detail_idx, 5, None).border = border
+            if info.parameters is not None:
+                body_cell = _sheet.cell(_sheet.max_row + 2, 1, "URI Parameters")
+                body_cell.font = Font(bold=True)
 
-                    _sheet.cell(detail_idx, 6, schema_info.description).border = border
+                # schema headers
+                schema_headers = ["Name", "Title", "In", "Required", "Type", "Default", "Description"]
+                for h_idx, h_name in enumerate(schema_headers):
+                    header_cell = _sheet.cell(body_cell.row + 1, h_idx + 1, h_name)
+                    set_header_style(header_cell, "center", False)
+
+                # schema detail
+                insert_param_schema_value(_sheet, header_cell, info.parameters)
+
+            if info.responses is not None:
+                body_cell = _sheet.cell(_sheet.max_row + 2, 1, "Responses")
+                body_cell.font = Font(bold=True)
+                current_row = _sheet.max_row
+                res_row_num = body_cell.row
+                for res_info in info.responses:
+                    res_headers = ["Status Code", "Description", "Content-type"]
+                    for h_idx, info_name in enumerate(res_headers):
+                        header_cell = _sheet.cell(current_row + h_idx + 1, 1, info_name)
+                        set_header_style(header_cell, "left", False)
+
+                    _sheet.cell(res_row_num + 1, 2, res_info.status_code).border = border
+                    _sheet.cell(res_row_num + 2, 2, res_info.description).border = border
+                    _sheet.cell(res_row_num + 3, 2, res_info.content_type).border = border
+
+                    # schema headers
+                    schema_headers = ["Name", "Title", "Required", "Type", "Default", "Description"]
+                    for h_idx, h_name in enumerate(schema_headers):
+                        header_cell = _sheet.cell(res_row_num + 5, h_idx + 1, h_name)
+                        set_header_style(header_cell, "center", False)
+
+                    # schema detail
+                    insert_schema_value(_sheet, header_cell, res_info.schema)
+
+                    current_row = _sheet.max_row + 1
+                    res_row_num = _sheet.max_row + 1
 
             _row = _sheet.max_row + 2
-        #end for
-    #end for
+
+
+def insert_schema_value(_sheet, header_cell, schema):
+
+    for s_idx, schema_info in enumerate(schema):
+        detail_idx = header_cell.row + 1 + s_idx
+        _sheet.cell(detail_idx, 1, schema_info.name).border = border
+        _sheet.cell(detail_idx, 2, schema_info.title).border = border
+        _sheet.cell(detail_idx, 3, schema_info.required).border = border
+        _sheet.cell(detail_idx, 4, schema_info.type).border = border
+        _sheet.cell(detail_idx, 5, None).border = border
+        try:
+            # 엑셀 파일 열기 시 수식 오류로 인해 임시 처리
+            if schema_info.default is not None and "==" not in str(schema_info.default):
+                _sheet.cell(detail_idx, 5, schema_info.default).border = border
+        except ValueError as e:
+            # print("insert_sheets_info Exception :", e)
+            # traceback.print_exc()
+            pass
+
+        _sheet.cell(detail_idx, 6, schema_info.description).border = border
+
+
+def insert_param_schema_value(_sheet, header_cell, schema):
+    for s_idx, schema_info in enumerate(schema):
+        detail_idx = header_cell.row + 1 + s_idx
+        _sheet.cell(detail_idx, 1, schema_info.name).border = border
+        _sheet.cell(detail_idx, 2, schema_info.title).border = border
+        _sheet.cell(detail_idx, 3, schema_info.schema_in).border = border
+        _sheet.cell(detail_idx, 4, schema_info.required).border = border
+        _sheet.cell(detail_idx, 5, schema_info.type).border = border
+        _sheet.cell(detail_idx, 6, None).border = border
+
+        try:
+            # 엑셀 파일 열기 시 수식 오류로 인해 임시 처리
+            if schema_info.default is not None and "==" not in str(schema_info.default):
+                _sheet.cell(detail_idx, 6, schema_info.default).border = border
+            else:
+                _sheet.cell(detail_idx, 6, None).border = border
+        except ValueError as e:
+            pass
+
+        _sheet.cell(detail_idx, 7, schema_info.description).border = border
 
 
 def set_header_style(header_cell, horizontal, bold):
